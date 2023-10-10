@@ -1,0 +1,29 @@
+import jax
+import jax.numpy as jnp
+import jax.tree_util as jtu
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import genjax
+from genjax import GenerativeFunction, ChoiceMap, Selection, trace
+from genjax.inference.smc import *
+sns.set_theme(style="white")
+
+console = genjax.pretty(width=80)
+
+sceneshape = [(0.,10.), (0.,10.)]
+
+@genjax.gen
+def trunctest(x_obs):
+    x = genjax.tfp_truncated_normal(x_obs, 1.0, 0.0, 10.0) @ "x"
+#    x = genjax.normal(x_obs, 2.0) @ "x"
+    return x
+
+
+if __name__ == "__main__":
+    key, sub_key = jax.random.split(key)
+    tr = genjax.simulate(trunctest)(sub_key, (3.0,))    
+    print(tr.get_choices()["x"])
+
+
+
