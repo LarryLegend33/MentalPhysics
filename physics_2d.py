@@ -22,8 +22,8 @@ scene_dim = 10
 σ_pos = 1.0
 σ_vel = 1.0
 maxvel = 4.0
-positions = jnp.arange(0, scene_dim)
-velocities = jnp.arange(-maxvel, maxvel+1)
+positions = jnp.arange(0, scene_dim).astype(jnp.float32)
+velocities = jnp.arange(-maxvel, maxvel+1).astype(jnp.float32)
 truncwin = 2
 
 """ Define Distributions """
@@ -36,9 +36,7 @@ class LabeledCategorical(ExactDensity):
         return labels[cat_index]
 
     def logpdf(self, v, probs, labels, **kwargs):
-        probindex = jnp.argwhere(labels==v)[0][0]
-        logpdf = jnp.log(probs)
-        w = logpdf[probindex]
+        w = jnp.sum(jnp.log(probs) * (labels==v))
         return w
 
 class UniformCategorical(ExactDensity):
@@ -58,16 +56,16 @@ labcat = LabeledCategorical()
 uniformcat = UniformCategorical()
 normalize = lambda x: x / jnp.sum(x)
 discrete_norm = lambda μ, σ, dom: normalize(jnp.array([tfd.Normal(loc=μ, scale=σ).cdf(i + .5) - tfd.Normal(loc=μ, scale=σ).cdf(i - .5) for i in dom]))
-truncate = lambda μ, dom, discnorm_vals: jnp.array([normval if abs(d-μ) <= truncwin else 0 for d, normval in zip(dom, discnorm_vals)])
+truncate = lambda μ, dom, discnorm_vals: jnp.array([jax.lax.cond(abs(d-μ) <= truncwin, lambda: normval, lambda: 0.) for d, normval in zip(dom, discnorm_vals)])
 discrete_truncnorm = lambda μ, σ, dom: normalize(truncate(μ, dom, discrete_norm(μ, σ, dom)))
 
 """ Generative Functions for Model """
 
-def vel_change_probs(vxₚ, xₚ):
-    if (xₚ <= positions[0] and vxₚ < 0) or (xₚ >= positions[-1] and vxₚ > 0):
-        return discrete_truncnorm(-vxₚ, σ_vel, velocities)
+def vel_change_probs(velₚ, posₚ):
+    if (posₚ <= positions[0] and velₚ < 0) or (posₚ >= positions[-1] and velₚ > 0):
+        return discrete_truncnorm(-velₚ, σ_vel, velocities)
     else:
-        return discrete_truncnorm(vxₚ, σ_vel, velocities)
+        return discrete_truncnorm(velₚ, σ_vel, velocities)
 
 @genjax.gen
 def init_latent_model():
@@ -79,17 +77,36 @@ def init_latent_model():
     return (occ, x, y, vx, vy)
 
 @genjax.gen
-def step_latent_model(occₚ, xₚ, yₚ, vxₚ, vyₚ):
-    vx = labcat(vel_change_probs(vxₚ, xₚ), velocities) @ "vx"
-    vy = labcat(vel_change_probs(vyₚ, yₚ), velocities) @ "vy"
-    occ = cat(discrete_norm(occₚ, 1, positions)) @ "occ"
-    x = cat(discrete_truncnorm(xₚ + vxₚ, positions)) @ "x" 
-    y = cat(discrete_truncnorm(yₚ + vyₚ, positions)) @ "y"
-    return (occ, x, y, vx, vy)
+def invert_velocity(vₚ):
+    v = labcat(discrete_truncnorm(-vₚ, σ_vel, velocities), velocities) @ "value"
+    return v
     
-    
-genjax.simulate(step_latent_model)(subkey, (2, 4, 5, 1, 1))
+@genjax.gen
+def samesign_velocity(vₚ):
+    v = labcat(discrete_truncnorm(vₚ, σ_vel, velocities), velocities) @ "value"
+    return v
 
+velocity_switch = genjax.Switch(invert_velocity, samesign_velocity)
+
+@genjax.gen
+def step_latent_model(occₚ, xₚ, yₚ, vxₚ, vyₚ):
+    x_collision = jnp.array(
+        ((xₚ <= positions[0]) * (vxₚ < 0)) + ((xₚ >= positions[-1]) * (vxₚ > 0)),
+        dtype=int)
+    y_collision = jnp.array(
+        ((yₚ <= positions[0]) * (vyₚ < 0)) + ((yₚ >= positions[-1]) * (vyₚ > 0)),
+        dtype=int)
+    vx = velocity_switch(x_collision, vxₚ) @ "vx"
+    vy = velocity_switch(y_collision, vyₚ) @ "vy"
+    occ = cat(discrete_norm(occₚ, σ_pos, positions)) @ "occ"
+    x = cat(discrete_truncnorm(xₚ + vxₚ, σ_pos, positions)) @ "x" 
+    y = cat(discrete_truncnorm(yₚ + vyₚ, σ_pos, positions)) @ "y"
+    return (occ, x, y, vx, vy)
+
+    
+key, subkey = jax.random.split(key, 2)
+tr =genjax.simulate(step_latent_model)(subkey, (2., 4., 5., 1., 1.))
+# Do we need to implement the recurse operator for step latent model here?
 
 """ Renderer """
 
@@ -106,8 +123,6 @@ def make_random_obs():
                                           minval=0, maxval=3, shape=(scene_dim, scene_dim))
         obs.append(random_frame)
     return obs
-
-
 
 def render_physics(obs):
     # traverse a permutation first.

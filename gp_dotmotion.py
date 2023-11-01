@@ -110,30 +110,3 @@ def launch_anim(motion_scenegraph):
     #     running = False
 
 
-def viz_graph(motion_graph)
-    """Visualize a graph.
-    
-    Args:
-        num_nodes (int): Number of nodes in graph.
-        edges (list): List of edges in graph.
-        filename (str): Filename to save graph to.
-        node_names (list): List of node names.
-    """
-    motion_graph.attr("node", style="filled")
-    # num_nodes = motion_graph.nodes
-    # edges = motion_graph.edges
-    
-    colors = matplotlib.cm.tab20(range(num_nodes))
-    colors = distinctipy.get_colors(num_nodes, pastel_factor=0.7)
-    for i in range(num_nodes):
-        motion_graph.node(str(i), node_names[i], fillcolor=matplotlib.colors.to_hex(colors[i]))
-
-    max_width_px = 2000
-    max_height_px = 2000
-    dpi = 200
-
-    motion_graph.attr("graph",
-                # See https://graphviz.gitlab.io/_pages/doc/info/attrs.html#a:size
-                size="{},{}!".format(max_width_px / dpi, max_height_px / dpi),
-                dpi=str(dpi))
-    motion_graph.render(filename_prefix, format=filetype)
