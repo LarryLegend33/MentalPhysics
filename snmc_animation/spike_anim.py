@@ -1,4 +1,4 @@
-from spike import Spike, Particle, electrode
+from spike import Spike, Particle, SampleScore, electrode
 import pygame as pg
 import numpy as np
 from scipy.stats import bernoulli
@@ -6,7 +6,7 @@ from scipy.stats import bernoulli
 # will have a frame count. if a spike with that init time is present in a particle, 
 # add it to the spike_queue. 
 
-def render_snmc_sim():
+def render_snmc():
      # traverse a permutation first.
     spike_queue = []
     num_particles = 1
@@ -23,12 +23,14 @@ def render_snmc_sim():
     brain = pg.image.load("MouseBrain.png")
 #    electrode_r = loadImage("Electrode.png")
 #    electrode_l = loadImage("Electrode_Reflected.png")
-    particles = [Particle(i, win) for i in range(num_particles)]
-    for p in particles:
-        p.populate_assemblies()
-        p.run_snmc()
-        p.populate_wta_and_scoring()
-        spike_queue.extend(p.all_spikes)
+
+# quick hack here is having x and y coord of activity be member variables of the SampleScore class. 
+    samplescores = [SampleScore(5, win) for i in range(num_particles)]
+    for s in samplescores:
+        s.populate_assemblies()
+        s.run_snmc()
+        s.populate_wta_and_scoring()
+        spike_queue.extend(s.all_spikes)
     win = pg.display.set_mode((scene_dim, scene_dim))
     running = True
     frame = 0
@@ -37,7 +39,7 @@ def render_snmc_sim():
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
-        pg.time.wait(100)
+        pg.time.wait(50)
         for sp in spike_queue:
              sp.move_in_time(frame)
              sp.display(frame)
@@ -46,3 +48,6 @@ def render_snmc_sim():
         pg.display.update()
         frame += 1
     pg.quit()
+
+# write a stripped down multiply and normalize here
+# log(P / Kp) + log( 1/Q   / Kq)
