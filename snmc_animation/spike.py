@@ -57,7 +57,7 @@ class Particle:
 
 class SampleScore:
     def __init__(self, num_states, surface):
-        self.length_of_simulation = 2000
+
         self.neurons_per_assembly = 2
         self.num_states = num_states
         self.kq = 5
@@ -66,7 +66,7 @@ class SampleScore:
         # hand code for now. 
         self.assembly_indices = ["q" + str(i) for i in range(self.num_states)] + [
             "p" + str(i) for i in range(self.num_states)]
-        self.assemblies = {i : [] for i in self.assembly_indices}
+        self.assemblies = {i : [[] for i in range(self.neurons_per_assembly)] for i in self.assembly_indices}
         self.sim_lambdas = [np.random.uniform(0, .2) for i in range(num_states)]
         self.mux = {"q": [], 
                     "p": []}
@@ -94,7 +94,7 @@ class SampleScore:
         spikes = sum([self.assemblies[assembly][i][time] for i in range(self.neurons_per_assembly)])
         return spikes
         
-    def populate_wta_and_scoring(self):
+    def collect_spikes(self):
         spike_height = 5
         spacing = 2
         cortex_x = 600
@@ -121,25 +121,31 @@ class SampleScore_RealTime(SampleScore):
 
     def __init__(self, num_states, surface):
         self.state = float("NaN")
+        self.t = 0
         SampleScore.__init__(self, num_states, surface)
         
     def poisson_spike(self):
         for assembly_neuron in self.assemblies.keys():
+            # this indexes the assemblies using the labels qNUM or pNUM
             rate = self.sim_lambdas[int(assembly_neuron[1:])]
-            self.assemblies[assembly_neuron].append(np.random.poisson(rate, 1)[0])
+            for i in range(self.neurons_per_assembly):
+                self.assemblies[assembly_neuron][i].append(np.random.poisson(rate, 1)[0])
 
     def run_snmc(self):
         # have to implement counters too. 
         p_tik = 0
         q_tik = 0
-        for t in range(self.length_of_simulation):
+        state = float("NaN")
+        while True:
             self.poisson_spike()
             if math.isnan(state):
-                state = self.detect_winner(t)            
+                state = self.detect_winner(self.t)            
             if not math.isnan(state):
-                qmux_spikes = self.find_spikes_in_assemblies(t, "q" + str(state))
-                pmux_spikes = self.find_spikes_in_assemblies(t, "p" + str(state))
-# this is just to space the wta spikes a bit – it looks like one big bar.                 
+                qmux_spikes = self.find_spikes_in_assemblies(self.t,
+                                                             "q" + str(state))
+                pmux_spikes = self.find_spikes_in_assemblies(self.t,
+                                                             "p" + str(state))
+                # this is just to space the wta spikes a bit              
                 if np.random.random() > .6:
                     self.wta[state].append(1)
                 else:
@@ -149,9 +155,9 @@ class SampleScore_RealTime(SampleScore):
                     if i != state:
                         self.wta[i].append(0)
                 total_p_assembly_spikes = sum(map(
-                    lambda x: self.find_spikes_in_assemblies(t, "p" + str(x)), range(self.num_states)))
+                    lambda x: self.find_spikes_in_assemblies(self.t, "p" + str(x)), range(self.num_states)))
                 total_q_assembly_spikes = sum(map(
-                    lambda x: self.find_spikes_in_assemblies(t, "q" + str(x)), range(self.num_states)))
+                    lambda x: self.find_spikes_in_assemblies(self.t, "q" + str(x)), range(self.num_states)))
                 p_tik += total_p_assembly_spikes
                 if p_tik <= self.kp:
                     self.mux["p"].append(pmux_spikes)
@@ -177,6 +183,8 @@ class SampleScore_RealTime(SampleScore):
                 if p_tik > self.kp and q_tik > self.kq:
                     p_tik = 0
                     q_tik = 0
+                    self.state = state
+                    return True
                     # END SIMULATION HERE, store the state in self.state
             else:
                 self.mux["q"].append(0)
@@ -186,15 +194,22 @@ class SampleScore_RealTime(SampleScore):
                 self.tik["p"].append(0)
                 self.tik["q"].append(0)
                 self.accum["q"].append(0) 
+            self.t += 1
 
+    def assign_spikes(self, spikelist, x, y, spike_height):
+        for t in range(self.t):
+            if spikelist[t] != 0:
+                self.all_spikes.append(Spike(x, y, t, spike_height, self.surface))
+            
                 
 class SampleScore_Static(SampleScore):
     
     def __init__(self, num_states, surface):
+        self.length_of_simulation = 2000
         SampleScore.__init__(self, num_states, surface)
 
     def populate_assemblies(self):        
-        for ai self.assembly_indices:
+        for ai in self.assembly_indices:
             self.assemblies[ai] = [poisson_process(self.sim_lambdas[int(ai[1:])],
                                                    self.length_of_simulation)
                                    for n in range(self.neurons_per_assembly)] 
@@ -264,7 +279,7 @@ class SampleScore_Static(SampleScore):
         self.run_snmc()
         self.populate_wta_and_scoring()
    
-
+            
                 
 bernoulli = lambda p: np.random.binomial(1, p)
 
