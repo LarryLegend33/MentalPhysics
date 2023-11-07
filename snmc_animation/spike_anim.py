@@ -13,15 +13,11 @@ def render_snmc():
     spike_queue = []
     num_particles = 1
     scene_dim = 800
+    length_simulation = 2000
     pixsize = 2
     win = pg.display.set_mode((scene_dim, scene_dim))
     running = True
     samplescores = [SampleScore_RealTime(5, win) for i in range(num_particles)]
-    for s in samplescores:
-#        s.populate_assemblies()
-        s.run_snmc()
-        s.collect_spikes()
-        spike_queue.extend(s.all_spikes)
     win = pg.display.set_mode((scene_dim, scene_dim))
     running = True
     frame = 0
@@ -42,3 +38,19 @@ def render_snmc():
 
 # write a stripped down multiply and normalize here
 # log(P / Kp) + log( 1/Q   / Kq)
+
+def step_samplescores(particle, spike_queue):
+    for s in particle.samplescores:
+#        s.populate_assemblies()
+        s.run_snmc()
+        s.collect_spikes()
+        spike_queue.extend(s.all_spikes)
+    return spike_queue
+
+def joint_score(particles):
+# multiplication and norm should happen at the particle level.    
+
+# based on particle scores, you'll switch states. state is represented in the particle.
+# Resampler is a wrapper around particles; it takes scores and switches the state. 
+
+# also code in the mental physics rendering 
