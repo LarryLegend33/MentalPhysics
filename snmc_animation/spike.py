@@ -1,7 +1,9 @@
 import math
 import numpy as np
 import pygame as pg
+import copy
 
+normalize = lambda x: np.array(x) / sum(x)
     
 class Spike():
     
@@ -36,7 +38,9 @@ class Spike():
 # In the ElectrodeLocation class, parse according to P and Q? 
 
 # try to make this flexible so that you could eventually have the 
-# assemblies be generated on the fly. start with something very simple like a bernoulli draw.  
+# assemblies be generated on the fly. start with something very simple like a bernoulli draw.
+
+#make sure to put 0 spike pads between t and tprev in the multiplier and resampler. 
 
 class Resampler:
     def __init__(self, particles, x, y):
@@ -45,13 +49,35 @@ class Resampler:
         self.y = y
 
     def multiply_and_norm(self):
-        return 0
+        scores = []
+        for p in self.particles:
+            pscore = 0
+            one_over_qscore = 0
+            for s in p.samplescores:
+                pscore += np.log(sum(s.mux["p"][s.t_prev:s.t]) / s.kp)
+                one_over_qscore += np.log(sum(s.accum["q"][s.t_prev:s.t]) / s.kq)
+                scores.append(pscore + one_over_qscore)
+        resampler_spikes = [np.multinomial(1, normalize(np.exp(scores)))
+                            for p in self.particles]
+
+    def switch_states(self):
+        
 
 class Particle:
     def __init__(self, samplescores, x, y):
         self.samplescores = samplescores
         self.x = x
         self.y = y
+        
+    def step_samplescores(self, spike_queue):
+    # bump x or y here per samplescore to render in a different spot. 
+        for s in self.samplescores:
+           s.run_snmc()
+           s.collect_spikes(self.x, self.y)
+           spike_queue.extend(s.all_spikes)
+        return spike_queue
+
+
         
 # particle nests multiple SampleScores. Resampler takes particles.     
 
@@ -67,7 +93,7 @@ class SampleScore:
         self.assembly_indices = ["q" + str(i) for i in range(self.num_states)] + [
             "p" + str(i) for i in range(self.num_states)]
         self.assemblies = {i : [[] for i in range(self.neurons_per_assembly)] for i in self.assembly_indices}
-        self.sim_lambdas = [np.random.uniform(0, .2) for i in range(num_states)]
+        self.sim_lambdas = [np.random.uniform(0, 1) for i in range(num_states)]
         self.mux = {"q": [], 
                     "p": []}
         self.tik = {"q": [], 
@@ -75,6 +101,7 @@ class SampleScore:
         self.accum = {"q": []}
         self.wta = { i : [] for i in range(self.num_states) } 
         self.all_spikes = []
+        self.current_score = 0
         self.surface = surface
         
     def detect_winner(self, time):
@@ -94,11 +121,11 @@ class SampleScore:
         spikes = sum([self.assemblies[assembly][i][time] for i in range(self.neurons_per_assembly)])
         return spikes
         
-    def collect_spikes(self):
+    def collect_spikes(self, x, y):
         spike_height = 5
         spacing = 2
-        cortex_x = 600
-        cortex_y = 300
+        cortex_x = x
+        cortex_y = y
         # elements have to be arranged in y-order   
         wtas = [self.wta[i] for i in range(self.num_states)]
         assemblies = [self.assemblies[pq + str(pq_ind)][n_id] for pq in ["p", "q"] for n_id in range(
@@ -122,6 +149,7 @@ class SampleScore_RealTime(SampleScore):
     def __init__(self, num_states, surface):
         self.state = float("NaN")
         self.t = 0
+        self.t_lastscore = 0
         SampleScore.__init__(self, num_states, surface)
         
     def poisson_spike(self):
@@ -132,7 +160,8 @@ class SampleScore_RealTime(SampleScore):
                 self.assemblies[assembly_neuron][i].append(np.random.poisson(rate, 1)[0])
 
     def run_snmc(self):
-        # have to implement counters too. 
+        # have to implement counters too.
+        self.t_lastscore = copy.deepcopy(self.t)
         p_tik = 0
         q_tik = 0
         state = float("NaN")

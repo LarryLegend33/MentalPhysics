@@ -12,15 +12,28 @@ def render_snmc():
      # traverse a permutation first.
     spike_queue = []
     num_particles = 1
+    num_latents_per_particle = 2
+    num_states_per_latent = 5
+    num_snmc_steps = 10
     scene_dim = 800
     length_simulation = 2000
     pixsize = 2
     win = pg.display.set_mode((scene_dim, scene_dim))
-    running = True
-    samplescores = [SampleScore_RealTime(5, win) for i in range(num_particles)]
+    particles = [Particle([SampleScore_RealTime(
+            num_states_per_latent, win) for n in range(num_latents_per_particle)],
+                          600, 300) for p in range(num_particles)]
+
+    for step in range(num_snmc_steps):
+        for p in particles:
+            spike_queue = p.step_samplescores(spike_queue)
+            resampler = Resampler(particles)
+            resampler.multiply_and_norm()
+            resampler.switch_states()
+        
     win = pg.display.set_mode((scene_dim, scene_dim))
     running = True
     frame = 0
+    running = True
     while running:
         win.fill("black")
         for event in pg.event.get():
@@ -35,19 +48,12 @@ def render_snmc():
         pg.display.update()
         frame += 1
     pg.quit()
+    return particles
 
 # write a stripped down multiply and normalize here
 # log(P / Kp) + log( 1/Q   / Kq)
 
-def step_samplescores(particle, spike_queue):
-    for s in particle.samplescores:
-#        s.populate_assemblies()
-        s.run_snmc()
-        s.collect_spikes()
-        spike_queue.extend(s.all_spikes)
-    return spike_queue
 
-def joint_score(particles):
 # multiplication and norm should happen at the particle level.    
 
 # based on particle scores, you'll switch states. state is represented in the particle.
