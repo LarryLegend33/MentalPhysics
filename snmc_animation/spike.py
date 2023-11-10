@@ -40,27 +40,55 @@ class Spike():
 # try to make this flexible so that you could eventually have the 
 # assemblies be generated on the fly. start with something very simple like a bernoulli draw.
 
-#make sure to put 0 spike pads between t and tprev in the multiplier and resampler. 
+#make sure to put 0 spike pads between t and tprev in the multiplier and resampler.
 
 class Resampler:
     def __init__(self, particles, x, y):
         self.particles = particles
+        self.particle_neuron_spikes = { p_id : [] for p_id in range(len(self.particles)) }
         self.x = x
         self.y = y
-
-    def multiply_and_norm(self):
+        self.t = float('nan')
+        self.spikes = []
+        
+    def multiply_and_norm_idealized(self):
         scores = []
         for p in self.particles:
             pscore = 0
             one_over_qscore = 0
             for s in p.samplescores:
-                pscore += np.log(sum(s.mux["p"][s.t_prev:s.t]) / s.kp)
-                one_over_qscore += np.log(sum(s.accum["q"][s.t_prev:s.t]) / s.kq)
-                scores.append(pscore + one_over_qscore)
-        resampler_spikes = [np.multinomial(1, normalize(np.exp(scores)))
+                print("times")
+                print(s.t_lastscore)
+                print(s.t)
+                pscore += np.log(sum(s.return_last_step("mux", "p")) / s.kp)
+                one_over_qscore += np.log(sum(s.return_last_step("accum", "q")) / s.kq)
+            scores.append(pscore + one_over_qscore)
+
+        print("Scores")
+        print(scores)
+        normalizer_spikes = np.exp(scores)
+        if sum(normalizer_spikes) == 0:
+            # creates a uniform draw, but by now particle filter has collapsed. turn this into neural floating point as best as possible.
+            normalizer_spikes += -1.0
+
+        resampler_spikes = [np.random.multinomial(1, normalize(normalizer_spikes))
                             for p in self.particles]
+        self.spikes = resampler_spikes
 
     def switch_states(self):
+        # eventually this will switch the wta states to using a different
+        # particle as a parent, but haven't added the CPTs yet. CPTs will be a
+        # metagraph structure 
+        return 0
+
+    def extract_scoring_times(self):
+        sc_times = []
+        for p in self.particles:
+            for s in p.samplescores:
+                sc_times.append(s.t)
+        return np.max(sc_times)
+                            
+                            
         
 
 class Particle:
@@ -76,8 +104,6 @@ class Particle:
            s.collect_spikes(self.x, self.y)
            spike_queue.extend(s.all_spikes)
         return spike_queue
-
-
         
 # particle nests multiple SampleScores. Resampler takes particles.     
 
@@ -103,6 +129,13 @@ class SampleScore:
         self.all_spikes = []
         self.current_score = 0
         self.surface = surface
+        self.component_dict = { "mux" : self.mux,
+                                "tik" : self.tik,
+                                "accum" : self.accum,
+                                "wta" : self.wta,
+                                "assemblies" : self.assemblies }
+                                
+        
         
     def detect_winner(self, time):
         # turn this into a map over all q 
@@ -158,6 +191,13 @@ class SampleScore_RealTime(SampleScore):
             rate = self.sim_lambdas[int(assembly_neuron[1:])]
             for i in range(self.neurons_per_assembly):
                 self.assemblies[assembly_neuron][i].append(np.random.poisson(rate, 1)[0])
+
+    def return_last_step(self, component, p_or_q, *assembly_neuron_id):
+        spiketrain = self.component_dict[component][p_or_q]
+        if component == "assemblies" and assembly_neuron_id != ():
+            return spiketrain[assembly_neuron_id[0]][self.t_lastscore:self.t]
+        else:
+            return spiketrain[self.t_lastscore:self.t]
 
     def run_snmc(self):
         # have to implement counters too.
