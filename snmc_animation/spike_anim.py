@@ -27,7 +27,6 @@ def render_snmc():
             spike_queue = p.step_samplescores(spike_queue)
             resampler = Resampler(particles, 200, 300)
             resampler.multiply_and_norm_idealized()
-            resampler.extract_scoring_times()
   #            resampler.switch_states()
 
     win = pg.display.set_mode((scene_dim, scene_dim))
@@ -47,7 +46,7 @@ def render_snmc():
         pg.display.update()
         frame += 1
     pg.quit()
-    return particles
+    return particles, win
 
 
 # get the actual generation of spikes out of the classes. each class will just have spikes in time.
@@ -55,7 +54,47 @@ def render_snmc():
 # of spikes in the outer loop. 
 
 
+# this is actually very simple. scroll through the component list and 
+
+
+def collect_spikes(obj, loc_x, loc_y, surface):
+
+    spike_height = 5
+    spacing = 2
+
+    if type(obj) == SampleScore_RealTime:
+        ss = obj
+        spikes_in_timewin = lambda spikes: spikes[ss.t_lastscore:ss.t]
+        # elements have to be arranged in y-order   
+        wtas = [ss.wta[i] for i in range(ss.num_states)]
+        assemblies = [ss.assemblies[pq + str(pq_ind)][n_id]
+                      for pq in ["p", "q"] for n_id in range(
+                       ss.neurons_per_assembly) for pq_ind in range(ss.num_states)]
+        scoring = [ss.mux["p"]
+                   ss.mux["q"],
+                   ss.tik["p"],
+                   ss.tik["q"],
+                   ss.accum["q"]]
+        elements = list(map(spikes_in_timewin, wtas + assemblies + scoring))
+        sp_train_ylocs = range(loc_y, loc_y + (
+            (spike_height + spacing) * len(elements)), spike_height+spacing)
+        timewin = [ss.t_lastscore, ss.t]
+
+    elif type(obj) == Resampler:
+        resampler = obj
+        timewin = resampler.time: resampler.time + len(resampler.spikes)
+        resampler_spikes = []
+        
+    spikes_to_draw = []
+    for i, spikelist in enumerate(elements):
+        for ind, t in enumerate(timewin):
+            if spikelist[ind] != 0:
+                spikes_to_draw.append(Spike(loc_x, sp_train_ylocs[i], t, spike_height, surface))
+    return spikes_to_draw
+
+# need the right timer here
 
 
 
 
+            

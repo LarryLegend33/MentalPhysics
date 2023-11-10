@@ -50,6 +50,7 @@ class Resampler:
         self.y = y
         self.t = float('nan')
         self.spikes = []
+        self.time = self.extract_scoring_times()
         
     def multiply_and_norm_idealized(self):
         scores = []
@@ -73,7 +74,8 @@ class Resampler:
 
         resampler_spikes = [np.random.multinomial(1, normalize(normalizer_spikes))
                             for p in self.particles]
-        self.spikes = resampler_spikes
+        self.spikes = [normalizer_spikes, resampler_spikes]
+        
 
     def switch_states(self):
         # eventually this will switch the wta states to using a different
@@ -134,8 +136,6 @@ class SampleScore:
                                 "accum" : self.accum,
                                 "wta" : self.wta,
                                 "assemblies" : self.assemblies }
-                                
-        
         
     def detect_winner(self, time):
         # turn this into a map over all q 
@@ -154,36 +154,19 @@ class SampleScore:
         spikes = sum([self.assemblies[assembly][i][time] for i in range(self.neurons_per_assembly)])
         return spikes
         
-    def collect_spikes(self, x, y):
-        spike_height = 5
-        spacing = 2
-        cortex_x = x
-        cortex_y = y
-        # elements have to be arranged in y-order   
-        wtas = [self.wta[i] for i in range(self.num_states)]
-        assemblies = [self.assemblies[pq + str(pq_ind)][n_id] for pq in ["p", "q"] for n_id in range(
-                       self.neurons_per_assembly) for pq_ind in range(self.num_states)]
-        scoring = [self.mux["p"], self.mux["q"], self.tik["p"], self.tik["q"], self.accum["q"]]
-        elements = wtas + assemblies + scoring
-        sp_train_ylocs = range(cortex_y, cortex_y + ((spike_height + spacing) * len(elements)), spike_height+spacing)
-        for i, elem in enumerate(elements):
-            self.assign_spikes(elem, cortex_x, sp_train_ylocs[i], spike_height)        
-
+  
 # maybe a good idea here to just return the elements, and have assign spikes be outside the class. 
             
-    def assign_spikes(self, spikelist, x, y, spike_height):
-        for t in range(self.length_of_simulation):
-            if spikelist[t] != 0:
-                self.all_spikes.append(Spike(x, y, t, spike_height, self.surface))            
+               
         
 
 class SampleScore_RealTime(SampleScore):
 
-    def __init__(self, num_states, surface):
+    def __init__(self, num_states):
         self.state = float("NaN")
         self.t = 0
         self.t_lastscore = 0
-        SampleScore.__init__(self, num_states, surface)
+        SampleScore.__init__(self, num_states)
         
     def poisson_spike(self):
         for assembly_neuron in self.assemblies.keys():
@@ -265,11 +248,7 @@ class SampleScore_RealTime(SampleScore):
                 self.accum["q"].append(0) 
             self.t += 1
 
-    def assign_spikes(self, spikelist, x, y, spike_height):
-        for t in range(self.t):
-            if spikelist[t] != 0:
-                self.all_spikes.append(Spike(x, y, t, spike_height, self.surface))
-            
+   
                 
 class SampleScore_Static(SampleScore):
     
